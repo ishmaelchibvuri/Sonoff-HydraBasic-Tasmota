@@ -1,0 +1,232 @@
+Smart Laundry Notifications with a Sonoff S31 & Home Assistant
+November 18, 2018
+
+
+
+Make your Laundry Smarter with our favorite smart plug, the Sonoff S31, and Home Assistant with Voice Notifications when the Washer and/or Dryer are finished.  Easy power monitoring and automations with this step by step tutorial of the setup.
+
+Sonoff S31
+
+Soldering Iron Station
+Helping Hands(as shown)
+Better Helping Hands
+0.015 Solder
+Female Jumper Wires
+USB FTDI for Flashing
+
+Tasmota Backlog (modify to your values)
+backlog ssid MyWiFiz; password SooperSekret; mqtthost 192.168.1.5; mqttuser me123; mqttpassword 123that; powerretain 1; topic SNF-Washer; sensorretain 1; poweronstate 1; friendlyname SNF-Washer; teleperiod 60
+
+Home Assistant Config Sample & Automations:
+
+(configuration.yaml)
+ sensor:
+  - platform: mqtt
+    name: "Dryer State"
+    state_topic: "hass/state/dryer"
+    icon: mdi:tumble-dryer
+  - platform: mqtt
+    name: "Washer State"
+    state_topic: "hass/state/washer"
+    icon: mdi:washing-machine
+  - platform: mqtt
+    name: "Washer Watts"
+    state_topic: "tele/SNF-Washer/SENSOR"
+    value_template: "{{value_json['ENERGY'].Power }}"
+    qos: 2
+    unit_of_measurement : "W"
+    icon: mdi:flash-circle
+    availability_topic: "tele/SNF-Washer/LWT"
+    payload_available: "Online"
+    payload_not_available: "Offline"
+  - platform: mqtt
+    name: "Washer Voltage"
+    state_topic: "tele/SNF-Washer/SENSOR"
+    value_template: "{{value_json['ENERGY'].Voltage }}"
+    qos: 2
+    unit_of_measurement : "V"
+    icon: mdi:flash-circle
+    availability_topic: "tele/SNF-Washer/LWT"
+    payload_available: "Online"
+    payload_not_available: "Offline"
+  - platform: mqtt
+    name: "Washer Amps"
+    state_topic: "tele/SNF-Washer/SENSOR"
+    value_template: "{{value_json['ENERGY'].Current }}"
+    qos: 2
+    unit_of_measurement : "A"
+    icon: mdi:flash-circle
+    availability_topic: "tele/SNF-Washer/LWT"
+    payload_available: "Online"
+    payload_not_available: "Offline"
+  - platform: mqtt
+    name: "Washer Energy Today"
+    state_topic: "tele/SNF-Washer/SENSOR"
+    value_template: "{{value_json['ENERGY'].Today }}"
+    qos: 2
+    unit_of_measurement : "kWh"
+    availability_topic: "tele/SNF-Washer/LWT"
+    payload_available: "Online"
+    payload_not_available: "Offline"
+  - platform: mqtt
+    name: "Washer Energy Yesterday"
+    state_topic: "tele/SNF-Washer/SENSOR"
+    value_template: "{{value_json['ENERGY'].Yesterday }}"
+    qos: 2
+    unit_of_measurement : "kWh"
+    availability_topic: "tele/SNF-Washer/LWT"
+    payload_available: "Online"
+    payload_not_available: "Offline"
+
+  - platform: mqtt
+    state_topic: "tele/SNF-Washer/STATE"
+    name: "Washer Signal"
+    unit_of_measurement: "%"
+    value_template: "{{value_json['Wifi'].RSSI }}"
+    availability_topic: "tele/SNF-Washer/LWT"
+    qos: 1
+    payload_available: "Online"
+    payload_not_available: "Offline"
+
+(group.yaml)
+
+  washerpanel:
+    name: Washer
+    entities:
+      - sensor.washer_state
+      - sensor.washer_voltage
+      - sensor.washer_watts
+      - sensor.washer_amps
+      - sensor.washer_energy_today
+      - sensor.washer_energy_yesterday
+      - sensor.washer_signal
+
+(automations.yaml)
+
+- alias: 'Dryer State - Door'
+  trigger:
+    platform: numeric_state
+    entity_id: sensor.dryer_watts
+    above: 7
+    below: 20
+    for:
+      seconds: 2
+  action:
+    - service: mqtt.publish
+      data:
+        topic: hass/state/dryer
+        payload: 'Door Open'
+        retain: 'true'
+- alias: 'Dryer State - Drying'
+  trigger:
+    platform: numeric_state
+    entity_id: sensor.dryer_watts
+    above: 50
+    for:
+      seconds: 2
+  action:
+    - service: mqtt.publish
+      data:
+        topic: hass/state/dryer
+        payload: 'Drying'
+        retain: 'true'
+- alias: 'Dryer State - Idle'
+  trigger:
+    platform: numeric_state
+    entity_id: sensor.dryer_watts
+    below: 6
+    for:
+      seconds: 2
+  action:
+    - service: mqtt.publish
+      data:
+        topic: hass/state/dryer
+        payload: 'Idle'
+        retain: 'true'
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#  Washing Machine Start/Finish
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+- alias: 'Washer State - Start'
+  trigger:
+    platform: numeric_state
+    entity_id: sensor.washer_watts
+    above: 5
+    for:
+      seconds: 4
+# Make sure washer isn't already running and delaying between cycles - don't re-trigger and cause stopwatch reset
+  condition:
+    condition: template
+    value_template: "{{ states.sensor.washer_state.state != 'Washing' }}"
+  action:
+    - service: mqtt.publish
+      data:
+        topic: hass/state/washer
+        payload: 'Washing'
+        retain: 'true'
+- alias: 'Washer State - Idle'
+  trigger:
+    platform: numeric_state
+    entity_id: sensor.washer_watts
+    below: 5
+    for:
+      minutes: 5
+  action:
+    - service: mqtt.publish
+      data:
+        topic: hass/state/washer
+        payload: 'Idle'
+        retain: 'true'
+- alias: 'Dryer Finished'
+  trigger:
+    platform: state
+    entity_id: sensor.dryer_state
+    from: 'Drying'
+    to: 'Idle'
+  action:
+    - service: media_player.volume_set
+      data:
+        entity_id:
+          - media_player.craft_room_speaker
+          - media_player.kitchen_speaker
+          - media_player.master_speaker
+          - media_player.bedroom_speaker
+        volume_level: '0.50'
+    - service: tts.google_say
+      entity_id:
+        - media_player.craft_room_speaker
+        - media_player.kitchen_speaker
+        - media_player.master_speaker
+        - media_player.bedroom_speaker
+      data_template:
+         message: "Hey.. Guess what..  The dryer is done! Exciting stuff, right?"
+- alias: 'Washer Finished'
+  trigger:
+    platform: state
+    entity_id: sensor.washer_state
+    from: 'Washing'
+    to: 'Idle'
+  condition:
+    condition: template
+    value_template: "{{ states.sensor.dryer_state.state != 'Drying' }}"
+  action:
+    - service: media_player.volume_set
+      data:
+        entity_id:
+          - media_player.craft_room_speaker
+          - media_player.kitchen_speaker
+          - media_player.master_speaker
+          - media_player.bedroom_speaker
+        volume_level: '0.50'
+    - service: tts.google_say
+      entity_id:
+        - media_player.craft_room_speaker
+        - media_player.kitchen_speaker
+        - media_player.master_speaker
+        - media_player.bedroom_speaker
+      data_template:
+
+         message: "Laundry in the washer can be moved over!"
+
+
+
+
