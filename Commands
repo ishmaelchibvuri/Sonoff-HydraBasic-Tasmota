@@ -1,0 +1,25 @@
+Tasmota Rules Commands:
+backlog switchmode1 3;switchmode2 1;switchmode3 1
+
+rule1 on switch2#state=1 do publish cmnd/S20Beta/POWER TOGGLE endon
+rule1 on
+
+rule2 on switch3#state=1 do publish HydraBasic/PIR/state YES endon on switch3#state=0 do publish HydraBasic/PIR/state NO endon
+rule2 on
+
+rule3 on switch3#state=1 do publish cmnd/TuyaDimTest/Dimmer 75 endon on switch3#state=0 do publish cmnd/TuyaDimTest/Dimmer 25 endon
+rule3 on
+
+HomeAssistant Binary Sensor Config YAML:
+  - platform: mqtt
+    name: "HydraBasic Motion"
+    state_topic: "HydraBasic/PIR/state"
+    availability_topic: "tele/HydraBasic/LWT"
+    qos: 1
+    payload_on: "YES"
+    payload_off: "NO"
+    payload_available: "Online"
+    payload_not_available: "Offline"
+    device_class: motion
+
+The Sonoff Basic is a mains powered device!  There is a danger of electrocution if not installed properly. If you don't know how to install a Sonoff, please call an electrician.
